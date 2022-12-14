@@ -289,21 +289,6 @@ class PositionwiseFeedForward(nn.Module):
 		return self.w_2(self.dropout(F.relu(self.w_1(x))))
 
 
-class Encoder(nn.Module):
-	"""N层堆叠的Encoder"""
-
-	def __init__(self, layer, N):
-		super(Encoder, self).__init__()
-		self.layers = clones(layer, N)
-		self.norm = LayerNorm(layer.size)
-
-	def forward(self, x, mask):
-		"""每层layer依次通过输入序列与mask"""
-		for layer in self.layers:
-			x = layer(x, mask)
-		return self.norm(x)
-
-
 class SelfAttn(nn.Module):
 	def __init__(self, layer, N):
 		super(SelfAttn, self).__init__()
@@ -359,71 +344,6 @@ class CrossAttnLayer(nn.Module):
 		m = memory
 		# corss attention
 		x = self.sublayer[0](x, lambda x: self.cross_attn(x, m, m, src_mask))  # x m m  m是encoder过来的 x来自上一个 DecoderLayer
-		return self.sublayer[1](x, self.feed_forward)
-
-
-class EncoderLayer(nn.Module):   # 多层注意力block + ffn block
-	"""Encoder分为两层Self-Attn和Feed Forward"""
-
-	def __init__(self, size, self_attn, feed_forward, dropout):
-		super(EncoderLayer, self).__init__()
-		self.size = size
-		self.self_attn = self_attn
-		self.feed_forward = feed_forward
-		self.sublayer = clones(SublayerConnection(self.size, dropout), 2)
-
-	def forward(self, x, mask):
-		# 先过self-attn
-		x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
-		# 再过feedforward
-		return self.sublayer[1](x, self.feed_forward)
-		
-
-class Decoder(nn.Module):  # decoder 和encoder差不多 但是传进来的layer不一样
-	"""带mask功能的通用Decoder结构"""
-
-	def __init__(self, layer, N):
-		super(Decoder, self).__init__()
-		self.layers = clones(layer, N)
-		self.norm = LayerNorm(layer.size)
-
-	def forward(self, x, memory, src_mask, trg_mask):
-		for layer in self.layers:
-			x = layer(x, memory, src_mask, trg_mask)
-		return self.norm(x)
-
-	'''
-	（1）Decoder SubLayer-1 使用的是 “Masked” Multi-Headed Attention 机制，防止为了模型看到要预测的数据，防止泄露。
-	
-	（2）SubLayer-2 是一个 Encoder-Decoder Multi-head Attention。
-
-	（3）LinearLayer 和 SoftmaxLayer 作用于 SubLayer-3 的输出后面，来预测对应的 word 的 probabilities 。
-	'''
-	
-	
-class DecoderLayer(nn.Module):
-	"""Decoder is made of self-attn, src-attn, and feed forward"""
-
-	def __init__(self, size, self_attn, src_attn, feed_forward, dropout):
-		super(DecoderLayer, self).__init__()
-		self.size = size
-		self.self_attn = self_attn
-		self.src_attn = src_attn
-		self.feed_forward = feed_forward
-		self.sublayer = clones(SublayerConnection(self.size, dropout), 2)
-		self.cross_sublayer = SublayerConnection(self.size * 2, dropout)
-		self.transform_linear = nn.Linear(self.size * 2, self.size)
-
-	def forward(self, x, memory, src_mask, trg_mask):
-		"""将decoder的三个Sublayer串联起来"""
-		m = memory
-		# self attention
-		x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, trg_mask))  # sequence mask
-		# corss attention
-		x = self.cross_sublayer(x.repeat(1, 1, 2), lambda x: self.src_attn(x, m, m, src_mask))  # x m m  m是encoder过来的 x来自上一个 DecoderLayer
-		# x = self.cross_sublayer(x.repeat(1, 1, 1), lambda x: self.src_attn(x, m, m, src_mask))  # x m m  m是encoder过来的 x来自上一个 DecoderLayer
-		
-		x = self.transform_linear(x)
 		return self.sublayer[1](x, self.feed_forward)
 
 
